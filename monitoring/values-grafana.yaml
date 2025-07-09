@@ -1,0 +1,82 @@
+# grafana-values.yaml
+# Helm-Values für dein Garden-Cluster-Projekt
+# Installiere Grafana mit dieser values-Datei, um Loki, Prometheus und Tempo vorzuprovisionieren
+
+replicaCount: 1
+
+# Grafana-Service als ClusterIP
+service:
+  type: ClusterIP
+
+# (Optional) Ingress, falls du grafana unter einem Host erreichbar machen willst:
+# ingress:
+#   enabled: true
+#   annotations:
+#     kubernetes.io/ingress.class: nginx
+#   hosts:
+#     - grafana.garden.local
+
+# Admin-Account (ändere das Passwort in Produktion!)
+adminUser: admin
+adminPassword: admin
+
+# Data sources provisioning
+# Grafana liest alle datasources.yaml-Dateien im provisioning-Ordner beim Start ein.
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      - name: Loki
+        uid: loki
+        type: loki
+        access: proxy
+        url: http://loki.monitoring.svc.cluster.local:3100
+        isDefault: false
+        editable: true
+        jsonData:
+          maxLines: 1000
+
+      - name: Prometheus
+        uid: prometheus
+        type: prometheus
+        access: proxy
+        url: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        isDefault: true
+        editable: true
+
+      - name: Tempo
+        uid: tempo
+        type: tempo
+        access: proxy
+        url: http://tempo-query-frontend.monitoring.svc.cluster.local:9095
+        isDefault: false
+        editable: true
+
+# Dashboard Providers (leer lassen, wenn du später Dashboards per JSON provisionieren willst)
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: default
+        orgId: 1
+        folder: ''
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards
+
+# (Optional) Bereits vorhandene Dashboards im Chart installieren:
+dashboards:
+# default:
+#   my-garden-dashboard:
+#     file: /var/lib/grafana/dashboards/garden-dashboard.json
+
+# Ressourcen-Limits für den Grafana-Pod (optional)
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

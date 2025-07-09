@@ -1,0 +1,51 @@
+mode: deployment
+
+image:
+  repository: otel/opentelemetry-collector-contrib
+  tag: "0.128.0"
+  pullPolicy: IfNotPresent
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "256Mi"
+  limits:
+    cpu: "200m"
+    memory: "512Mi"
+
+config:
+  receivers:
+    otlp:
+      protocols:
+        grpc: {}
+        http: {}
+    prometheus:
+      config:
+        scrape_configs:
+          - job_name: garden-app-metrics
+            metrics_path: /metrics
+            static_configs:
+              - targets: ['$(POD_IP):5000']
+  processors:
+    batch: {}
+  exporters:
+    prometheusremotewrite:
+      endpoint: http://monitoring-prometheus-operated.monitoring.svc:9090/api/v1/write
+    loki:
+      endpoint: http://loki.monitoring.svc:3100/loki/api/v1/push
+    otlp:
+      endpoint: http://tempo-distributed-collector.monitoring.svc:4317
+  service:
+    pipelines:
+      metrics:
+        receivers: [prometheus]
+        processors: [batch]
+        exporters: [prometheusremotewrite]
+      logs:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [loki]
+      traces:
+        receivers: [otlp]
+        processors: [batch]
+        exporters: [otlp]

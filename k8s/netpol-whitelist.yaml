@@ -1,0 +1,19 @@
+# k8s/netpol-whitelist.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: garden-whitelist
+spec:
+  podSelector:
+    matchLabels:
+      app: garden
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: garden
+      ports:
+        - protocol: TCP
+          port: 8080

@@ -1,0 +1,12 @@
+# k8s/pv.yaml
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: garden-pv
+spec:
+  capacity:
+    storage: 5Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: /mnt/data/garden-pv

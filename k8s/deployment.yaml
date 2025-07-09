@@ -1,0 +1,76 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: garden-deployment
+  namespace: garden            # Namespace ergänzt
+  labels:
+    app: garden
+spec:
+  replicas: 2                  # Initiale Replika-Zahl (wird von der HPA überschrieben)
+  selector:
+    matchLabels:
+      app: garden
+  template:
+    metadata:
+      labels:
+        app: garden
+    spec:
+      containers:
+        - name: garden
+          image: garden-app:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 3
+
+          env:
+            - name: APP_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: garden-config
+                  key: APP_PORT
+            - name: MONGO_USER
+              valueFrom:
+                secretKeyRef:
+                  name: garden-mongo-secret
+                  key: mongo-root-username
+            - name: MONGO_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: garden-mongo-secret
+                  key: mongo-root-password
+            - name: MONGO_URI
+              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@garden-mongo-garden-mongo-svc:27017/gardendb?replicaSet=rs0&authSource=admin"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector.monitoring.svc:4317"
+            - name: OTEL_SERVICE_NAME
+              value: "garden-app"
+          volumeMounts:
+            - name: app-storage
+              mountPath: /app/data
+      volumes:
+        - name: app-storage
+          persistentVolumeClaim:
+            claimName: garden-pvc

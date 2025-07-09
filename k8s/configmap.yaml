@@ -1,0 +1,11 @@
+# k8s/configmap.yaml
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: garden-config
+data:
+  APP_PORT: "8080"
+  FEATURE_FLAG_X: "true"
+
+#echo -n "admin"        | base64  # e.g. YWRtaW4=
+#echo -n "s3cr3tPassw0rd" | base64  # e.g. czNjcjN0UGFzc3cwcmQ=

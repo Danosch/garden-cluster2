@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: garden-servicemonitor
+  namespace: monitoring
+  labels:
+    release: monitoring     # muss mit dem Release-Namen deines kube-prometheus-stack übereinstimmen
+spec:
+  selector:
+    matchLabels:
+      app: garden           # label deines Services
+  namespaceSelector:
+    matchNames:
+      - garden              # Namespace deiner App
+  endpoints:
+    - port: http            # der Port-Name aus deinem Service (siehe k8s/service.yaml)
+      path: /q/metrics
+      interval: 15s

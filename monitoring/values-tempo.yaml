@@ -1,0 +1,17 @@
+tempo:
+  enabled: true
+  service:
+    type: ClusterIP
+  distributor:
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+          http:
+  storage:
+    trace:
+      backend: local
+      local:
+        path: /data/tempo/traces
+  persistence:
+    enabled: false
