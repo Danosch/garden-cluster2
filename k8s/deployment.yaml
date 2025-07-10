@@ -64,7 +64,7 @@ spec:
             - name: MONGO_URI
               value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@garden-mongo-garden-mongo-svc:27017/gardendb?replicaSet=rs0&authSource=admin"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
-              value: "http://otel-collector.monitoring.svc:4317"
+              value: "http://otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAME
               value: "garden-app"
           volumeMounts:

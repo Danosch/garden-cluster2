@@ -1,82 +1,188 @@
-# grafana-values.yaml
-# Helm-Values für dein Garden-Cluster-Projekt
-# Installiere Grafana mit dieser values-Datei, um Loki, Prometheus und Tempo vorzuprovisionieren
+# Complete Grafana values.yaml with data sources and dashboards
+# Configured for your existing monitoring stack
 
-replicaCount: 1
+# Disable the problematic init container
+initChownData:
+  enabled: false
 
-# Grafana-Service als ClusterIP
+# Configure proper security context
+securityContext:
+  runAsNonRoot: false
+  runAsUser: 472
+  runAsGroup: 472
+  fsGroup: 472
+
+podSecurityContext:
+  runAsNonRoot: false
+  runAsUser: 472
+  runAsGroup: 472
+  fsGroup: 472
+
+# Persistence configuration
+persistence:
+  enabled: true
+  type: pvc
+  size: 10Gi
+  accessModes:
+    - ReadWriteOnce
+
+# Service configuration
 service:
   type: ClusterIP
+  port: 3000
 
-# (Optional) Ingress, falls du grafana unter einem Host erreichbar machen willst:
-# ingress:
-#   enabled: true
-#   annotations:
-#     kubernetes.io/ingress.class: nginx
-#   hosts:
-#     - grafana.garden.local
-
-# Admin-Account (ändere das Passwort in Produktion!)
+# Admin credentials
 adminUser: admin
-adminPassword: admin
+adminPassword: admin123
 
-# Data sources provisioning
-# Grafana liest alle datasources.yaml-Dateien im provisioning-Ordner beim Start ein.
+# Resource limits
+resources:
+  limits:
+    cpu: 500m
+    memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+# Grafana configuration
+grafana.ini:
+  server:
+    root_url: "/"
+  security:
+    allow_embedding: true
+  auth.anonymous:
+    enabled: true
+    org_name: Main Org.
+    org_role: Viewer
+  feature_toggles:
+    enable: tracing
+
+# Data sources configuration - using your actual service names
 datasources:
   datasources.yaml:
     apiVersion: 1
     datasources:
-      - name: Loki
-        uid: loki
-        type: loki
-        access: proxy
-        url: http://loki.monitoring.svc.cluster.local:3100
-        isDefault: false
-        editable: true
-        jsonData:
-          maxLines: 1000
-
+      # Prometheus data source - using your kube-prometheus-stack service
       - name: Prometheus
-        uid: prometheus
         type: prometheus
         access: proxy
-        url: http://monitoring-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090
+        url: http://prometheus-kube-prometheus-prometheus:9090
         isDefault: true
         editable: true
+        jsonData:
+          timeInterval: 30s
+          queryTimeout: 300s
+          httpMethod: POST
 
-      - name: Tempo
-        uid: tempo
-        type: tempo
+      # Loki data source for logs - using your loki service directly
+      - name: Loki
+        type: loki
         access: proxy
-        url: http://tempo-query-frontend.monitoring.svc.cluster.local:9095
-        isDefault: false
+        url: http://loki:3100
         editable: true
 
-# Dashboard Providers (leer lassen, wenn du später Dashboards per JSON provisionieren willst)
+      # Tempo data source for traces - using your tempo service
+      - name: Tempo
+        type: tempo
+        access: proxy
+        url: http://tempo:3200
+        uid: tempo
+        editable: true
+        jsonData:
+          tracesToLogs:
+            datasourceUid: loki
+            tags: ['job', 'instance', 'pod', 'namespace']
+            mappedTags: [{ key: 'service.name', value: 'service' }]
+            mapTagNamesEnabled: false
+            spanStartTimeShift: '1h'
+            spanEndTimeShift: '1h'
+            filterByTraceID: false
+            filterBySpanID: false
+          tracesToMetrics:
+            datasourceUid: prometheus
+            tags: [{ key: 'service.name', value: 'service' }, { key: 'job' }]
+            queries:
+              - name: 'Sample query'
+                query: 'sum(rate(traces_spanmetrics_latency_bucket{$$__tags}[5m]))'
+          serviceMap:
+            datasourceUid: prometheus
+          search:
+            hide: false
+          nodeGraph:
+            enabled: true
+
+# Dashboards configuration
+dashboards:
+  default:
+    kubernetes-cluster:
+      gnetId: 7249
+      revision: 1
+      datasource: Prometheus
+
+    kubernetes-nodes:
+      gnetId: 1860
+      revision: 27
+      datasource: Prometheus
+
+    kubernetes-pods:
+      gnetId: 6417
+      revision: 1
+      datasource: Prometheus
+
+    loki-dashboard:
+      gnetId: 13407
+      revision: 1
+      datasource: Loki
+
+    prometheus-stats:
+      gnetId: 2
+      revision: 2
+      datasource: Prometheus
+
+    alertmanager:
+      gnetId: 9578
+      revision: 4
+      datasource: Prometheus
+
+# Dashboard providers configuration
 dashboardProviders:
   dashboardproviders.yaml:
     apiVersion: 1
     providers:
-      - name: default
+      - name: 'default'
         orgId: 1
         folder: ''
         type: file
         disableDeletion: false
-        editable: true
+        allowUiUpdates: true
         options:
-          path: /var/lib/grafana/dashboards
+          path: /var/lib/grafana/dashboards/default
 
-# (Optional) Bereits vorhandene Dashboards im Chart installieren:
-dashboards:
-# default:
-#   my-garden-dashboard:
-#     file: /var/lib/grafana/dashboards/garden-dashboard.json
+# Enable dashboard downloads
+downloadDashboards:
+  enabled: true
+  env: {}
+  resources: {}
+  securityContext:
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+    seccompProfile:
+      type: RuntimeDefault
 
-# Ressourcen-Limits für den Grafana-Pod (optional)
-resources:
-  requests:
-    cpu: 100m
-    memory: 128Mi
-  limits:
-    cpu: 500m
-    memory: 512Mi
+# Plugins to install
+plugins:
+  - grafana-piechart-panel
+  - grafana-worldmap-panel
+
+# RBAC configuration
+rbac:
+  create: true
+  pspEnabled: false
+  namespaced: false
+
+# Service account
+serviceAccount:
+  create: true
+  autoMount: true

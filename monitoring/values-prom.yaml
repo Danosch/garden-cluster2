@@ -4,6 +4,12 @@ grafana:
   adminPassword: admin
   service:
     type: ClusterIP
+    sidecar:
+      datasources:
+        enabled: true
+        label: grafana_datasource
 prometheus:
   prometheusSpec:
     serviceMonitorSelectorNilUsesHelmValues: false
+nodeExporter:
+  enabled: false

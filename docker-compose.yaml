@@ -1,0 +1,31 @@
+services:
+  mongo:
+    image: mongo:6.0
+    container_name: garden-mongo
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: secret
+
+  garden-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: garden-app:latest
+    env_file:
+      - .env
+    depends_on:
+      - mongo
+    ports:
+      - "8080:8080"
+    environment:
+      - MONGO_USER=admin
+      - MONGO_PASSWORD=secret
+      - MONGO_URI=mongodb://admin:secret@mongo:27017/gardendb?replicaSet=rs0&authSource=admin
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/q/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped

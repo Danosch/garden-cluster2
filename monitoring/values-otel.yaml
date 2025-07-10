@@ -2,50 +2,76 @@ mode: deployment
 
 image:
   repository: otel/opentelemetry-collector-contrib
-  tag: "0.128.0"
-  pullPolicy: IfNotPresent
+  tag: "0.91.0"
+
+replicaCount: 1
 
 resources:
   requests:
-    cpu: "100m"
-    memory: "256Mi"
+    cpu: 100m
+    memory: 256Mi
   limits:
-    cpu: "200m"
-    memory: "512Mi"
+    cpu: 200m
+    memory: 512Mi
 
 config:
   receivers:
     otlp:
       protocols:
-        grpc: {}
-        http: {}
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
     prometheus:
       config:
         scrape_configs:
-          - job_name: garden-app-metrics
-            metrics_path: /metrics
+          - job_name: 'garden-app'
+            scrape_interval: 15s
             static_configs:
-              - targets: ['$(POD_IP):5000']
+              - targets: ['garden-service.garden.svc.cluster.local:80']
+            metrics_path: '/metrics'
+
   processors:
-    batch: {}
+    batch:
+      timeout: 1s
+      send_batch_size: 1024
+
+    resource:
+      attributes:
+        - key: service.name
+          value: garden-app
+          action: upsert
+
   exporters:
     prometheusremotewrite:
-      endpoint: http://monitoring-prometheus-operated.monitoring.svc:9090/api/v1/write
+      endpoint: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
     loki:
-      endpoint: http://loki.monitoring.svc:3100/loki/api/v1/push
+      endpoint: "http://loki-gateway.monitoring.svc.cluster.local:80/loki/api/v1/push"
+
     otlp:
-      endpoint: http://tempo-distributed-collector.monitoring.svc:4317
+      endpoint: "http://tempo.monitoring.svc.cluster.local:4317"
+      tls:
+        insecure: true
+
   service:
     pipelines:
       metrics:
-        receivers: [prometheus]
-        processors: [batch]
+        receivers: [otlp, prometheus]
+        processors: [resource, batch]
         exporters: [prometheusremotewrite]
+
       logs:
         receivers: [otlp]
-        processors: [batch]
+        processors: [resource, batch]
         exporters: [loki]
+
       traces:
         receivers: [otlp]
-        processors: [batch]
+        processors: [resource, batch]
         exporters: [otlp]
+
+# Service configuration - let the chart use its defaults
+service:
+  type: ClusterIP

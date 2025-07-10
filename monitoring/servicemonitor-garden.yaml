@@ -4,7 +4,7 @@ metadata:
   name: garden-servicemonitor
   namespace: monitoring
   labels:
-    release: monitoring     # muss mit dem Release-Namen deines kube-prometheus-stack übereinstimmen
+    release: prom     # muss mit dem Release-Namen deines kube-prometheus-stack übereinstimmen
 spec:
   selector:
     matchLabels:

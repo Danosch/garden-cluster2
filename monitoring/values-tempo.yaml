@@ -1,17 +1,46 @@
+# Tempo in einfachem Modus
 tempo:
-  enabled: true
-  service:
-    type: ClusterIP
-  distributor:
-    receivers:
-      otlp:
-        protocols:
-          grpc:
-          http:
+  searchEnabled: true
+  metricsGenerator:
+    enabled: true
+    remoteWriteUrl: "http://prometheus-kube-prometheus-prometheus.monitoring.svc.cluster.local:9090/api/v1/write"
+
   storage:
     trace:
       backend: local
       local:
-        path: /data/tempo/traces
-  persistence:
-    enabled: false
+        path: /var/tempo/traces
+
+  global_overrides:
+    metrics_generator_processors:
+      - service-graphs
+      - span-metrics
+
+# Einzelner Pod für Entwicklung
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9095
+
+# Persistence
+persistence:
+  enabled: true
+  size: 5Gi
+
+# Resources
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 200m
+    memory: 256Mi
+
+# Monitoring
+serviceMonitor:
+  enabled: true
+  labels:
+    release: prometheus
+
+# Tests deaktivieren
+test:
+  enabled: false
