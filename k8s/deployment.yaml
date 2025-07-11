@@ -2,11 +2,11 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: garden-deployment
-  namespace: garden            # Namespace ergänzt
+  namespace: garden
   labels:
     app: garden
 spec:
-  replicas: 2                  # Initiale Replika-Zahl (wird von der HPA überschrieben)
+  replicas: 2
   selector:
     matchLabels:
       app: garden
@@ -33,36 +33,36 @@ spec:
             httpGet:
               path: /q/health/live
               port: http
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            initialDelaySeconds: 120   # war 60, jetzt 120s
+            periodSeconds: 20
             failureThreshold: 3
-
           readinessProbe:
             httpGet:
               path: /q/health/ready
               port: http
-            initialDelaySeconds: 5
-            periodSeconds: 5
+            initialDelaySeconds: 60    # war 30, jetzt 60s
+            periodSeconds: 10
             failureThreshold: 3
-
           env:
             - name: APP_PORT
               valueFrom:
                 configMapKeyRef:
                   name: garden-config
                   key: APP_PORT
-            - name: MONGO_USER
+            - name: QUARKUS_DATASOURCE_JDBC_URL
+              value: "jdbc:postgresql://postgresql-garden:5432/gardendb"
+            - name: QUARKUS_DATASOURCE_USERNAME
               valueFrom:
                 secretKeyRef:
-                  name: garden-mongo-secret
-                  key: mongo-root-username
-            - name: MONGO_PASSWORD
+                  name: garden-postgres-secret
+                  key: username
+            - name: QUARKUS_DATASOURCE_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: garden-mongo-secret
-                  key: mongo-root-password
-            - name: MONGO_URI
-              value: "mongodb://$(MONGO_USER):$(MONGO_PASSWORD)@garden-mongo-garden-mongo-svc:27017/gardendb?replicaSet=rs0&authSource=admin"
+                  name: garden-postgres-secret
+                  key: password
+            - name: QUARKUS_HIBERNATE_ORM_DATABASE_GENERATION
+              value: "update"
             - name: OTEL_EXPORTER_OTLP_ENDPOINT
               value: "http://otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4317"
             - name: OTEL_SERVICE_NAME

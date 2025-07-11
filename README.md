@@ -8,21 +8,21 @@ Diese Anleitung beschreibt Schritt für Schritt, wie du **Garden Cluster2** mit 
 
 Stelle sicher, dass folgende Tools installiert und in deiner PATH verfügbar sind:
 
-* Docker (Desktop oder Engine)
-* Kind v0.17+ (`go install sigs.k8s.io/kind@v0.17.0`)
-* kubectl v1.25+
-* Helm v3+
-* Java 21
-* Maven 3.6+
+- Docker (Desktop oder Engine)
+- Kind v0.17+ (`go install sigs.k8s.io/kind@v0.17.0`)
+- kubectl v1.25+
+- Helm v3+
+- Java 21
+- Maven 3.6+
 
 ---
 
 ## Projektstruktur
 
-```text
+```
 /
 ├── .gitignore
-├── .env               # Umgebungsvariablen für Docker Compose
+├── .env               # Umgebungsvariablen für Docker Compose (In-Memory DB)
 ├── docker-compose.yaml
 ├── Dockerfile
 ├── kind-cluster.yaml
@@ -31,22 +31,22 @@ Stelle sicher, dass folgende Tools installiert und in deiner PATH verfügbar sin
 │   ├── deployment.yaml
 │   ├── hpa.yaml
 │   ├── ingress.yaml
-│   ├── mongo-values.yaml
+│   ├── garden-postgres-secret.yaml
 │   ├── netpol-whitelist.yaml
 │   ├── pv.yaml
 │   ├── pvc.yaml
-│   ├── secret.yaml
 │   └── service.yaml
 ├── monitoring/
-│   ├── service-monitor-garden.yaml
+│   ├── kube-prometheus-stack/
+│   │   └── servicemonitor-garden.yaml
+│   ├── values-prom.yaml
 │   ├── values-grafana.yaml
 │   ├── values-loki.yaml
-│   ├── values-otel.yaml
-│   ├── values-prom.yaml
-│   └── values-tempo.yaml
+│   ├── values-tempo.yaml
+│   └── values-otel.yaml
 ├── src/
 │   └── main/
-│       ├── java/com/garden/…   (Quarkus-Code)
+│       ├── java/com/garden/...   # Quarkus-Code
 │       └── resources/
 ├── target/            # Build-Ausgabe
 └── pom.xml            # Maven Project Object Model
@@ -59,6 +59,7 @@ Stelle sicher, dass folgende Tools installiert und in deiner PATH verfügbar sin
 ```bash
 kind create cluster --name garden-cluster2 --config kind-cluster.yaml
 kubectl cluster-info --context kind-garden-cluster2
+docker ps  # prüfen, dass Node läuft
 kubectl create namespace garden
 kubectl create namespace monitoring
 ```
@@ -71,41 +72,44 @@ kubectl create namespace monitoring
 
 ```bash
 helm repo add grafana https://grafana.github.io/helm-charts
-helm repo add cortex https://cortexproject.github.io/cortex-helm-chart
+helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+helm repo add bitnami https://charts.bitnami.com/bitnami
 helm repo update
 ```
 
-### 2.2 Prometheus (Cortex/Mimir)
+### 2.2 Prometheus (kube-prometheus-stack)
 
 ```bash
-helm upgrade --install cortex cortex/cortex \
-  --namespace monitoring \
-  -f monitoring/values-prom.yaml
+helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+  -n monitoring -f monitoring/values-prom.yaml
 ```
 
 ### 2.3 Loki (Logs)
 
 ```bash
 helm upgrade --install loki grafana/loki \
-  --namespace monitoring \
-  -f monitoring/values-loki.yaml \
-  --set loki.useTestSchema=true
+  -n monitoring -f monitoring/values-loki.yaml
 ```
 
 ### 2.4 Tempo (Traces)
 
 ```bash
 helm upgrade --install tempo grafana/tempo \
-  --namespace monitoring \
-  -f monitoring/values-tempo.yaml
+  -n monitoring -f monitoring/values-tempo.yaml
 ```
 
-### 2.5 Grafana UI
+### 2.5 OpenTelemetry Collector
+
+```bash
+helm upgrade --install otel-collector open-telemetry/opentelemetry-collector \
+  -n monitoring -f monitoring/values-otel.yaml
+```
+
+### 2.6 Grafana UI
 
 ```bash
 helm upgrade --install grafana grafana/grafana \
-  --namespace monitoring \
-  -f monitoring/values-grafana.yaml
+  -n monitoring -f monitoring/values-grafana.yaml
 ```
 
 ---
@@ -119,7 +123,18 @@ kubectl wait --for=condition=Available apiservice v1beta1.metrics.k8s.io --timeo
 
 ---
 
-## 4. Quarkus-Garden-App bauen & Docker-Image
+## 4. Datenbank: PostgreSQL
+
+```bash
+helm upgrade --install postgresql bitnami/postgresql \
+  --namespace garden \
+  --set global.postgresql.postgresqlDatabase=gardendb \
+  --set auth.username=admin,auth.password=secret,auth.database=gardendb
+```
+
+---
+
+## 5. Quarkus-Garden-App bauen & Docker-Image
 
 ```bash
 mvn clean package -DskipTests
@@ -128,130 +143,104 @@ docker build -t garden-app:latest .
 
 ---
 
-## 5. Deployment in Namespace `garden`
+## 6. Deployment in Namespace `garden`
 
-### 5.1 MongoDB einrichten
-
-```bash
-kubectl apply -f k8s/mongo-values.yaml    # Secret & ConfigMap für MongoDB
-kubectl apply -f k8s/pv.yaml              # PersistentVolume
-kubectl apply -f k8s/pvc.yaml             # PersistentVolumeClaim
-kubectl apply -f k8s/deployment.yaml      # MongoDB Deployment
-kubectl apply -f k8s/service.yaml         # MongoDB Service
-```
-
-### 5.2 Garden-App deployen
+### 6.1 Garden-App deployen
 
 ```bash
-kubectl apply -f k8s/deployment.yaml      # App Deployment
-kubectl apply -f k8s/service.yaml         # App Service (Port 8080)
-kubectl apply -f k8s/ingress.yaml         # Ingress (optional)
-```
-
-### 5.3 Horizontal Pod Autoscaler
-
-```bash
-kubectl apply -f k8s/hpa.yaml             # HPA aktivieren
-kubectl get hpa -n garden                 # Status prüfen
+kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/garden-postgres-secret.yaml
+kubectl apply -f k8s/pv.yaml
+kubectl apply -f k8s/pvc.yaml
+kubectl apply -f k8s/deployment.yaml
+kubectl apply -f k8s/service.yaml
+kubectl apply -f k8s/ingress.yaml   # optional
+kubectl apply -f k8s/hpa.yaml
 ```
 
 ---
 
-## 6. Endpunkte & Beispiele
+## 7. Endpunkte & Beispiele
 
 ### Health & Metrics
 
-* Liveness Probe:
+```bash
+curl http://localhost:8080/q/health/live
+curl http://localhost:8080/q/health/ready
+curl http://localhost:8080/q/metrics
+```
 
-  ```bash
-  curl http://localhost:8080/q/health/live
-  ```
-* Readiness Probe:
+### Garden API
 
-  ```bash
-  curl http://localhost:8080/q/health/ready
-  ```
-* Prometheus-Metriken:
+| Methode | Pfad                        | Beschreibung         |
+| ------- | --------------------------- | -------------------- |
+| GET     | `/garden`                   | Willkommen-Endpoint  |
+| POST    | `/garden/create`            | Garten erstellen     |
+| GET     | `/garden/all`               | Alle Gärten          |
+| GET     | `/garden/{gardenId}`        | Garten nach ID       |
+| PUT     | `/garden/{gardenId}`        | Garten aktualisieren |
+| DELETE  | `/garden/{gardenId}`        | Garten löschen       |
 
-  ```bash
-  curl http://localhost:8080/q/metrics
-  ```
+### Tree API
 
-### Garden API (`/garden`)
+| Methode | Pfad                              | Beschreibung    |
+| ------- | --------------------------------- | --------------- |
+| POST    | `/garden/tree/create`             | Baum erstellen  |
+| GET     | `/garden/tree/all`                | Alle Bäume      |
+| GET     | `/garden/{gardenId}/trees`        | Bäume pro Garten|
+| DELETE  | `/garden/tree/{treeId}`           | Baum löschen    |
 
-| Methode | Pfad                 | Beschreibung         |
-| ------- | -------------------- | -------------------- |
-| GET     | `/garden`            | Welcome-Endpoint     |
-| POST    | `/garden/create`     | Garten erstellen     |
-| GET     | `/garden/all`        | Alle Gärten          |
-| GET     | `/garden/{gardenId}` | Garten nach ID       |
-| PUT     | `/garden/{gardenId}` | Garten aktualisieren |
-| DELETE  | `/garden/{gardenId}` | Garten löschen       |
+### Plant API
 
-### Tree API (`/garden/tree`)
-
-| Methode | Pfad                       | Beschreibung        |
-| ------- | -------------------------- | ------------------- |
-| POST    | `/garden/tree/create`      | Baum erstellen      |
-| GET     | `/garden/tree/all`         | Alle Bäume          |
-| GET     | `/garden/{gardenId}/trees` | Bäume eines Gartens |
-| DELETE  | `/garden/tree/{treeId}`    | Baum löschen        |
-
-### Plant API (`/garden/plant`)
-
-| Methode | Pfad                        | Beschreibung           |
-| ------- | --------------------------- | ---------------------- |
-| POST    | `/garden/plant/create`      | Pflanze erstellen      |
-| GET     | `/garden/plant/all`         | Alle Pflanzen          |
-| GET     | `/garden/{gardenId}/plants` | Pflanzen eines Gartens |
-| DELETE  | `/garden/plant/{plantId}`   | Pflanze löschen        |
-
-### Beispielaufrufe
-
-* **Hello**
-
-  ```bash
-  curl http://localhost:8080/garden
-  ```
-
-* **Garten erstellen**
-
-  ```bash
-  curl -X POST http://localhost:8080/garden/create \
-    -H 'Content-Type: application/json' \
-    -d '{"name":"Mein Garten","description":"Test"}'
-  ```
-
-* **Alle Gärten abrufen**
-
-  ```bash
-  curl http://localhost:8080/garden/all
-  ```
+| Methode | Pfad                                | Beschreibung       |
+| ------- | ----------------------------------- | ------------------ |
+| POST    | `/garden/plant/create`              | Pflanze erstellen  |
+| GET     | `/garden/plant/all`                 | Alle Pflanzen      |
+| GET     | `/garden/{gardenId}/plants`         | Pflanzen pro Garten|
+| DELETE  | `/garden/plant/{plantId}`           | Pflanze löschen    |
 
 ---
 
-## 7. Alternative: Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  mongo:
-    image: mongo:6.0
-    ports:
-      - '27017:27017'
-  garden:
-    build: .
-    image: garden-app:latest
-    ports:
-      - '8080:8080'
-    env_file:
-      - .env
-```
+## 8. Port-Forwards
 
 ```bash
-docker-compose up --build
+# Monitoring
+kubectl port-forward -n monitoring svc/grafana 3000:3000 &
+kubectl port-forward -n monitoring svc/loki-gateway 3100:80 &
+kubectl port-forward -n monitoring svc/tempo 3200:3200 &
+kubectl port-forward -n monitoring svc/otel-collector-opentelemetry-collector 4317:4317 &
+kubectl port-forward -n monitoring svc/otel-collector-opentelemetry-collector 4318:4318 &
+
+# App
+kubectl port-forward -n garden svc/garden-service 8080:80 &
 ```
 
 ---
 
-*Hinweis: Passe bei Bedarf Ports und Pfade in **\`\`** oder Helm-Werten an.*
+## 9. Bekannte Einschränkungen
+
+- **Loki & Tempo**: installiert, laufen, liefern aber aktuell keine Logs/Traces.
+- **Prometheus**: funktioniert einwandfrei.
+- **PostgreSQL**: läuft im Garden-Namespace.
+
+---
+
+*Passe bei Bedarf Ports oder Pfade in den Befehlen an.*
+
+---
+
+## Abschluss
+
+- **Prometheus-Metriken** funktionieren einwandfrei und lassen sich unter `http://localhost:8080/q/metrics` oder direkt im Prometheus-UI abrufen.
+- **Garden-App** ist per Port-Forward auf `http://localhost:8080` erreichbar; alle Health-, API- und Metrics-Endpunkte können aufgerufen werden.
+- **Loki & Tempo** sind installiert und laufen, liefern jedoch derzeit keine vollständigen Logs oder Traces. Eine genaue Untersuchung hierfür steht noch aus.
+
+---
+
+### Hinweise zu Windows/WSL
+
+Auf Windows-Systemen (insbesondere mit WSL2) kann es Probleme mit Ingress und Load-Balancern geben. Die Host-Port-Weiterleitung und DNS-Auflösung sind unter Windows oft fehleranfällig. Ich empfehle:
+
+- **Linux oder macOS** für eine stabile Kind/Ingress-Erfahrung.
+- Unter Windows nur für schnelle Tests nutzen, aber nicht für produktives Aufsetzen.
+- Falls Windows unumgänglich ist: Ingress-Controller wie **nginx-ingress** mit HostNetwork-Modus oder alternative Port-Forward-Strategien nutzen.
